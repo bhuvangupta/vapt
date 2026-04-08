@@ -87,33 +87,59 @@ class AsyncHttpClient:
                                  req_kwargs: dict) -> httpx.Response:
         """Follow redirects while checking scope on every hop.
 
-        Preserves headers, cookies, and auth from the original request so
-        that redirect hops maintain the same request context.  Body is
-        dropped on 303 (which converts to GET per RFC 7231).
+        Matches stock httpx semantics:
+        - 301/302/303 → convert to GET, drop body.
+        - 307/308 → preserve method and body.
+        - Cross-host redirects strip Authorization, Cookie, and auth
+          to avoid leaking credentials to a different host (even if
+          it is within the configured scope).
         """
+        original_host = resp.url.host
         seen = 0
+
         while resp.status_code in _REDIRECT_STATUSES and seen < _MAX_REDIRECTS:
             location = resp.headers.get("location")
             if not location:
                 break
-            # Resolve relative redirect
             next_url = str(resp.url.join(location))
             self._check_scope(next_url)
             await self._rate_limiter.acquire()
 
-            # Build kwargs for the follow-up request, preserving context
-            follow_kwargs = {k: v for k, v in req_kwargs.items()
-                            if k in ("headers", "cookies", "auth", "params")}
+            next_host = urlparse(next_url).hostname
 
-            if resp.status_code == 303:
-                # 303: always GET, drop body
+            # --- Determine method and body per RFC 7231 / 7538 ---
+            follow_kwargs: dict = {}
+            if resp.status_code in (301, 302, 303):
+                # Convert to GET, drop body (standard browser behavior)
                 method = "GET"
             elif resp.status_code in (307, 308):
-                # 307/308: preserve method AND body
+                # Preserve method AND body
                 for k in ("data", "json", "content"):
                     if k in req_kwargs:
                         follow_kwargs[k] = req_kwargs[k]
-            # 301/302: preserve method, drop body (common browser behavior)
+
+            # Carry over params (query string context)
+            if "params" in req_kwargs:
+                follow_kwargs["params"] = req_kwargs["params"]
+
+            # --- Credential safety on cross-host redirects ---
+            same_host = (next_host == original_host)
+
+            if "headers" in req_kwargs:
+                headers = dict(req_kwargs["headers"])
+                if not same_host:
+                    # Strip sensitive headers when host changes
+                    for h in ("authorization", "cookie", "proxy-authorization"):
+                        headers = {k: v for k, v in headers.items()
+                                   if k.lower() != h}
+                follow_kwargs["headers"] = headers
+
+            if same_host:
+                if "cookies" in req_kwargs:
+                    follow_kwargs["cookies"] = req_kwargs["cookies"]
+                if "auth" in req_kwargs:
+                    follow_kwargs["auth"] = req_kwargs["auth"]
+            # Cross-host: cookies and auth are intentionally NOT forwarded
 
             resp = await self._client.request(method, next_url, **follow_kwargs)
             seen += 1
