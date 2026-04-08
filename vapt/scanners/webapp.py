@@ -339,6 +339,9 @@ class WebAppScanner(BaseScanner):
         cms_detected: str | None = None
         cms_version: str | None = None
 
+        # Soft-404 baseline
+        baseline_body = await self.fetch_soft404_baseline()
+
         # Fetch homepage for content-based checks
         try:
             homepage_resp = await self.http.get(self.target.url)
@@ -348,18 +351,23 @@ class WebAppScanner(BaseScanner):
 
         # --- WordPress ---
         wp_indicators = 0
+        # Strong indicator: wp-content in homepage source (not a soft-404 artifact)
         if "wp-content" in homepage_body:
-            wp_indicators += 1
+            wp_indicators += 2  # Strong signal — actual WordPress content
 
         for wp_path in ("/wp-login.php", "/wp-admin/"):
             try:
-                resp = await self.http.head(f"{base}{wp_path}")
+                resp = await self.http.get(f"{base}{wp_path}")
                 if resp.status_code in (200, 301, 302):
+                    # Must NOT be a soft-404 to count
+                    if resp.status_code == 200 and self.is_soft_404(resp.text, baseline_body):
+                        continue
                     wp_indicators += 1
             except Exception:
                 pass
 
-        if wp_indicators >= 1:
+        # Require at least 2 indicators to confirm WordPress
+        if wp_indicators >= 2:
             cms_detected = "WordPress"
             # Try to extract version from meta tag or feed
             version_match = re.search(
@@ -374,7 +382,7 @@ class WebAppScanner(BaseScanner):
         if not cms_detected:
             try:
                 resp = await self.http.get(f"{base}/core/CHANGELOG.txt")
-                if resp.status_code == 200 and "drupal" in resp.text.lower():
+                if resp.status_code == 200 and not self.is_soft_404(resp.text, baseline_body) and "drupal" in resp.text.lower():
                     cms_detected = "Drupal"
                     version_match = re.search(r"Drupal\s+([\d.]+)", resp.text)
                     if version_match:
@@ -385,8 +393,8 @@ class WebAppScanner(BaseScanner):
         # --- Joomla ---
         if not cms_detected:
             try:
-                resp = await self.http.head(f"{base}/administrator/")
-                if resp.status_code in (200, 301, 302):
+                resp = await self.http.get(f"{base}/administrator/")
+                if resp.status_code in (200, 301, 302) and not self.is_soft_404(resp.text, baseline_body):
                     cms_detected = "Joomla"
                     # Try manifest for version
                     try:
