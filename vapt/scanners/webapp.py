@@ -106,6 +106,12 @@ class WebAppScanner(BaseScanner):
     # 1. Directory Discovery
     # ------------------------------------------------------------------
 
+    # Keywords indicating a soft-404 page (SPA or custom error)
+    _SOFT_404_KEYWORDS = [
+        "404", "not found", "page not found", "does not exist",
+        "cannot be found", "could not find",
+    ]
+
     async def _directory_discovery(self) -> None:
         paths = self._load_paths()
         if not paths:
@@ -114,6 +120,21 @@ class WebAppScanner(BaseScanner):
 
         base = self.target.base_url
         semaphore = asyncio.Semaphore(10)
+
+        # Fetch a soft-404 baseline: request a path that definitely doesn't exist.
+        # If the server returns 200 (common with SPAs), record its content-length
+        # so we can filter out identical responses for real paths.
+        baseline_length = -1
+        try:
+            bl_resp = await self.http.get(f"{base}/vapt-nonexistent-baseline-{id(self)}")
+            if bl_resp.status_code == 200:
+                baseline_length = len(bl_resp.text)
+                # Also check body for 404 keywords to confirm it's a soft-404
+                bl_lower = bl_resp.text.lower()
+                if not any(kw in bl_lower for kw in self._SOFT_404_KEYWORDS):
+                    baseline_length = -1  # Not a soft-404, don't filter
+        except Exception:
+            pass
 
         async def check_path(path: str) -> None:
             url = f"{base}/{path.lstrip('/')}"
@@ -126,6 +147,21 @@ class WebAppScanner(BaseScanner):
                 status = response.status_code
                 if status not in (200, 301, 302, 403):
                     return
+
+                # For 200 responses on sensitive paths, do a GET to check for soft-404
+                if status == 200 and baseline_length > 0:
+                    try:
+                        full_resp = await self.http.get(url)
+                        body = full_resp.text
+                        body_lower = body.lower()
+                        # Check for soft-404 keywords
+                        if any(kw in body_lower for kw in self._SOFT_404_KEYWORDS):
+                            return
+                        # Check similarity to baseline (within 10% = same SPA shell)
+                        if abs(len(body) - baseline_length) / baseline_length < 0.10:
+                            return
+                    except Exception:
+                        pass
 
                 normalized_path = "/" + path.lstrip("/")
                 is_admin = normalized_path.rstrip("/") in {p.rstrip("/") for p in ADMIN_PATHS}

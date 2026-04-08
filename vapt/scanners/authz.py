@@ -81,8 +81,48 @@ class AuthzScanner(BaseScanner):
         except Exception:
             pass
 
+    # Keywords that indicate a soft-404 / error page (SPA or server-rendered)
+    _SOFT_404_KEYWORDS = [
+        "404", "not found", "page not found", "does not exist",
+        "cannot be found", "could not find", "no longer available",
+        "page you requested", "page is not available",
+        "sorry but we could not find",
+    ]
+
+    def _is_soft_404(self, body: str, baseline_body: str) -> bool:
+        """Detect soft-404 pages that return HTTP 200.
+
+        Checks for 404-like keywords in the body and compares against a
+        known-404 baseline to catch SPA shells that serve the same page
+        for all routes.
+        """
+        body_lower = body.lower()
+
+        # Direct keyword detection
+        if any(kw in body_lower for kw in self._SOFT_404_KEYWORDS):
+            return True
+
+        # Similarity check: if the response body is very similar to the
+        # known-404 baseline, it's likely the same SPA shell / error page.
+        if baseline_body:
+            # Simple length-based similarity — within 10% means same page
+            len_diff = abs(len(body) - len(baseline_body))
+            if len(baseline_body) > 0 and len_diff / len(baseline_body) < 0.10:
+                return True
+
+        return False
+
     async def _test_forced_browsing_inner(self) -> None:
         base = self.target.base_url
+
+        # Fetch a known-404 baseline to detect soft-404s (SPAs returning 200)
+        baseline_body = ""
+        try:
+            baseline_resp = await self.http.get(f"{base}/vapt-nonexistent-path-{id(self)}")
+            if baseline_resp.status_code == 200:
+                baseline_body = baseline_resp.text
+        except Exception:
+            pass
 
         async def check_path(path: str, desc: str) -> None:
             url = f"{base}{path}"
@@ -92,9 +132,13 @@ class AuthzScanner(BaseScanner):
                 return
 
             if resp.status_code == 200:
-                body_lower = resp.text.lower()
-                # Check if it returned real content (not just a generic page / redirect)
-                has_content = len(resp.text) > 200
+                # Filter out soft-404s (SPAs that return 200 for all routes)
+                if self._is_soft_404(resp.text, baseline_body):
+                    return
+
+                # Must have substantive content beyond a generic shell
+                if len(resp.text) < 200:
+                    return
 
                 # Determine severity based on path sensitivity
                 is_admin = any(kw in path.lower() for kw in ["admin", "management", "internal"])
@@ -110,28 +154,28 @@ class AuthzScanner(BaseScanner):
                     severity, cvss = "High", 7.5
                     cvss_vector = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
 
-                if has_content:
-                    self.add_finding(
-                        title=f"Forced Browsing: {desc} Accessible ({path})",
-                        severity=severity,
-                        cvss_score=cvss,
-                        cvss_vector=cvss_vector,
-                        cwe_id="CWE-425",
-                        cwe_name="Direct Request ('Forced Browsing')",
-                        owasp="A01:2021 -- Broken Access Control",
-                        url=url,
-                        description=(
-                            f"The {desc.lower()} at {path} returned HTTP 200 with substantive content "
-                            f"({len(resp.text)} bytes) when accessed without authentication. "
-                            "This indicates missing access controls."
-                        ),
-                        steps_to_reproduce=[
-                            "Ensure no authentication cookies or tokens are set.",
-                            f"Navigate to {url}",
-                            "Observe that the page is accessible without login.",
-                        ],
-                        evidence_request=f"GET {url} (no auth)",
-                        evidence_response=resp.text[:2000],
+                self.add_finding(
+                    title=f"Forced Browsing: {desc} Accessible ({path})",
+                    severity=severity,
+                    cvss_score=cvss,
+                    cvss_vector=cvss_vector,
+                    cwe_id="CWE-425",
+                    cwe_name="Direct Request ('Forced Browsing')",
+                    owasp="A01:2021 -- Broken Access Control",
+                    url=url,
+                    description=(
+                        f"The {desc.lower()} at {path} returned HTTP 200 with distinct content "
+                        f"({len(resp.text)} bytes) when accessed without authentication, and "
+                        "the response does not match the site's default 404 page. "
+                        "This indicates the endpoint exists and may lack access controls."
+                    ),
+                    steps_to_reproduce=[
+                        "Ensure no authentication cookies or tokens are set.",
+                        f"Navigate to {url}",
+                        "Observe that the page is accessible without login.",
+                    ],
+                    evidence_request=f"GET {url} (no auth)",
+                    evidence_response=resp.text[:2000],
                         impact="Unauthenticated access to sensitive functionality. Attackers can view or modify data, access admin features, or enumerate users.",
                         remediation="Implement server-side access controls on all sensitive endpoints. Enforce authentication before granting access to protected resources.",
                         references=[
