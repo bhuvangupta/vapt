@@ -181,6 +181,9 @@ class AuthzScanner(BaseScanner):
     async def _test_idor_inner(self) -> None:
         base = self.target.base_url
 
+        # Soft-404 baseline
+        baseline_body = await self.fetch_soft404_baseline()
+
         # Collect endpoints to test: from context or defaults
         endpoints_to_test: list[str] = []
 
@@ -237,6 +240,12 @@ class AuthzScanner(BaseScanner):
                 resp1 = await self.http.get(url_id1, **kwargs)
                 resp2 = await self.http.get(url_id2, **kwargs)
             except Exception:
+                continue
+
+            # Filter soft-404 responses (SPA shells for nonexistent API routes)
+            if resp1.status_code == 200 and self.is_soft_404(resp1.text, baseline_body):
+                continue
+            if resp2.status_code == 200 and self.is_soft_404(resp2.text, baseline_body):
                 continue
 
             # Both IDs return 200 with different content — potential IDOR

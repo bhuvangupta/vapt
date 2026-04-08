@@ -234,6 +234,7 @@ class ApiScanner(BaseScanner):
 
             base = self.target.base_url
             auth_headers = self._build_auth_headers()
+            baseline_body = await self.fetch_soft404_baseline()
 
             for resource in BOLA_RESOURCES:
                 url_1 = f"{base}{resource}1"
@@ -246,6 +247,12 @@ class ApiScanner(BaseScanner):
                     continue
 
                 if resp_1.status_code != 200 or resp_2.status_code != 200:
+                    continue
+
+                # Filter soft-404 responses
+                if self.is_soft_404(resp_1.text, baseline_body):
+                    continue
+                if self.is_soft_404(resp_2.text, baseline_body):
                     continue
 
                 # Both return 200 — check if second returns different user data
