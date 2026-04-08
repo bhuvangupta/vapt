@@ -556,6 +556,85 @@ Reports include a "Tools Used" section documenting exactly which tools ran and w
 
 ---
 
+## OWASP ZAP Integration
+
+The suite integrates with [OWASP ZAP](https://www.zaproxy.org/) (free, open-source) to add **deep crawling and injection testing** that our built-in scanners can't match. When ZAP is running, the `zap` scanner automatically:
+
+1. **Spiders** the target — discovers all URLs, forms, parameters, and endpoints recursively
+2. **Active scans** with ZAP's engine — thousands of injection payloads with context-aware fuzzing
+3. **Imports alerts** into the unified report alongside our own findings
+
+If ZAP is not running, the scanner is silently skipped. Everything else works as before.
+
+### Install ZAP
+
+**macOS:**
+```bash
+brew install --cask zap
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install zaproxy
+```
+
+**Or download from:** https://www.zaproxy.org/download/
+
+### Start ZAP in daemon mode
+
+```bash
+# Start ZAP headless (no GUI) on port 8080
+zap.sh -daemon -port 8080 -config api.disablekey=true
+```
+
+On macOS, the path is typically:
+```bash
+/Applications/ZAP.app/Contents/Java/zap.sh -daemon -port 8080 -config api.disablekey=true
+```
+
+### Configure
+
+Uncomment the ZAP settings in your `config.yaml`:
+
+```yaml
+settings:
+  zap_host: "http://localhost:8080"
+  zap_api_key: ""                    # leave empty if api.disablekey=true
+  zap_spider_timeout: 120            # seconds for spider to complete
+  zap_scan_timeout: 300              # seconds for active scan to complete
+```
+
+### Run
+
+```bash
+# ZAP scanner is included in active mode automatically
+python run_vapt.py -c config.yaml --active
+```
+
+### What ZAP adds vs our built-in scanners
+
+| Capability | Built-in Scanners | With ZAP |
+|---|---|---|
+| **Endpoint discovery** | Static wordlist (66 paths) | Full recursive crawl |
+| **Injection testing** | Payload list (28 SQLi, 23 XSS) | 1000s of payloads, encoding permutations |
+| **Parameter detection** | HTML form parsing only | Full crawl + JS analysis |
+| **Session handling** | Pre-configured token only | Automatic session management |
+| **False positive rate** | Higher (heuristic) | Lower (years of tuning) |
+
+### ZAP findings in reports
+
+ZAP findings appear in the same HTML/PDF report, prefixed with `[ZAP]`. They carry:
+- Severity mapped from ZAP risk levels
+- CWE and OWASP Top 10 classification
+- Confidence: `confirmed` for ZAP high-confidence alerts, `tentative` for others
+- Full evidence (request, response, attack payload)
+
+### Run without ZAP
+
+If ZAP is not installed or not running, the suite works exactly as before — all built-in scanners run normally. ZAP is purely additive.
+
+---
+
 ## Project Structure
 
 ```
