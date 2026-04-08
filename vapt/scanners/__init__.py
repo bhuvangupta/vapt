@@ -25,5 +25,5 @@ def import_all_scanners():
     from vapt.scanners import (  # noqa: F401
         recon, network, ssl_tls, headers, webapp,
         injection, auth, authz, api, logic,
-        cloud, websocket_scan, graphql, ssrf,
+        cloud, websocket_scan, graphql, ssrf, zap_scan,
     )

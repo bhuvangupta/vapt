@@ -38,6 +38,7 @@ Standalone Python VAPT (Vulnerability Assessment & Penetration Testing) toolkit.
 | websocket | api | active | 0% |
 | graphql | api | active | 0% |
 | ssrf | injection | active | 0% |
+| zap | injection | active | 0% |
 
 ### Auth Support
 

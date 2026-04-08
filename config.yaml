@@ -33,6 +33,13 @@ settings:
   rate_limit: 2            # requests per second (per target)
   follow_redirects: true
 
+  # OWASP ZAP integration (optional — requires ZAP running in daemon mode)
+  # Start ZAP: zap.sh -daemon -port 8080 -config api.disablekey=true
+  # zap_host: "http://localhost:8080"
+  # zap_api_key: ""                    # leave empty if api.disablekey=true
+  # zap_spider_timeout: 120            # seconds for spider to complete
+  # zap_scan_timeout: 300              # seconds for active scan to complete
+
 scanners:
   skip: []                 # categories to skip, e.g. [network, cloud]
 
