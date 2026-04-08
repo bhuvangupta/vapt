@@ -126,7 +126,12 @@ authorization:
   ref: "VAPT-2026-001"
 ```
 
-### Full config with authentication
+### Full config with bearer token authentication
+
+Use this when your app uses Google login, SSO, or any OAuth/JWT flow where
+you cannot automate form login. Log in manually in a browser, copy the token
+from DevTools (Network tab → any API request → Authorization header), and
+set it as an environment variable.
 
 ```yaml
 targets:
@@ -138,12 +143,17 @@ targets:
   - url: https://admin.yourdomain.com
     name: "Admin Portal"
     auth:
-      login_url: https://admin.yourdomain.com/login
-      username: "qa_test_user"
-      password: "${VAPT_ADMIN_PASSWORD}"   # reads from environment variable
-      auth_type: form                      # form | basic | bearer | api_key
-      token_header: "Authorization"
-      cookies: {}
+      auth_type: bearer                     # bearer | api_key | basic | form
+      token_header: "Authorization"         # header name (default: Authorization)
+      token: "${VAPT_ADMIN_TOKEN}"          # bearer token from browser DevTools
+      # For API key auth instead:
+      # auth_type: api_key
+      # api_key: "${VAPT_API_KEY}"
+      # For basic form login (when possible):
+      # auth_type: form
+      # login_url: https://admin.yourdomain.com/login
+      # username: "qa_test_user"
+      # password: "${VAPT_ADMIN_PASSWORD}"
 
 settings:
   timeout: 10              # seconds per HTTP request
@@ -189,11 +199,20 @@ authorization:
 
 ### Environment variables
 
-Passwords should not be hardcoded. Use `${ENV_VAR}` in config.yaml:
+Secrets should not be hardcoded. Use `${ENV_VAR}` in config.yaml:
 
 ```bash
-# Set the password before running
+# For bearer token auth (Google login, SSO, OAuth):
+# 1. Log in to your app in a browser
+# 2. Open DevTools → Network tab → copy the Authorization header value
+# 3. Set it as an env var:
+export VAPT_ADMIN_TOKEN="eyJhbGciOiJSUzI1NiIs..."
+
+# For form-based login:
 export VAPT_ADMIN_PASSWORD="your_password_here"
+
+# For API key auth:
+export VAPT_API_KEY="your_api_key_here"
 
 # Then run the scan
 python run_vapt.py --config config.yaml --active
@@ -201,7 +220,9 @@ python run_vapt.py --config config.yaml --active
 
 | Variable | Purpose |
 |----------|---------|
-| `VAPT_ADMIN_PASSWORD` | Admin portal password for authenticated testing |
+| `VAPT_ADMIN_TOKEN` | Bearer token for SSO/OAuth/Google login (copy from browser DevTools) |
+| `VAPT_ADMIN_PASSWORD` | Password for form-based login |
+| `VAPT_API_KEY` | API key for API key auth |
 
 ---
 

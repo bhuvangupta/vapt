@@ -67,6 +67,27 @@ class BaseScanner(ABC):
         self.findings.append(finding)
         return finding
 
+    def build_auth_headers(self) -> dict[str, str]:
+        """Build authentication headers from target config.
+
+        Supports bearer token, API key, and basic auth. Returns an empty
+        dict if no auth is configured. Scanners should pass the result as
+        ``headers=self.build_auth_headers()`` for authenticated requests.
+        """
+        if not self.target.has_auth():
+            return {}
+
+        headers: dict[str, str] = {}
+        auth = self.target.auth or {}
+        header_name = auth.get("token_header", "Authorization")
+
+        if auth.get("api_key"):
+            headers[header_name] = auth["api_key"]
+        elif auth.get("token"):
+            headers[header_name] = f"Bearer {auth['token']}"
+
+        return headers
+
     def log(self, msg: str):
         """Log a message (picked up by runner for display)."""
         # Will be replaced by proper logging in runner
