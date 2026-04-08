@@ -1,0 +1,49 @@
+# VAPT Test Suite — Configuration
+# Copy this file and edit for your target(s).
+#
+# Usage:
+#   python run_vapt.py --config config.yaml              # passive scan
+#   python run_vapt.py --config config.yaml --active      # full scan
+#   python run_vapt.py --config config.yaml --dry-run     # preview only
+
+targets:
+  - url: https://www.yourdomain.com
+    name: "Public Website"
+    scope:
+      - "*.yourdomain.com"              # glob patterns for in-scope hostnames
+    exclude_paths: []                 # paths to skip, e.g. ["/payment", "/api/internal"]
+
+  # Uncomment to add an authenticated target:
+  # - url: https://admin.yourdomain.com
+  #   name: "Admin Portal"
+  #   auth:
+  #     login_url: https://admin.yourdomain.com/login
+  #     username: "qa_test_user"
+  #     password: "${VAPT_ADMIN_PASSWORD}"  # reads from env var
+  #     auth_type: form                     # form | basic | bearer | api_key
+  #     token_header: "Authorization"       # header name for token/api_key
+  #     token: "${VAPT_ADMIN_TOKEN}"        # bearer token (if pre-obtained)
+  #     api_key: ""                         # API key value (if applicable)
+  #     cookies: {}
+
+settings:
+  timeout: 10              # seconds per HTTP request
+  max_concurrent: 5        # max parallel requests per target
+  user_agent: "VAPT-Scanner/1.0 (Authorized Security Test)"
+  rate_limit: 2            # requests per second (per target)
+  follow_redirects: true
+
+scanners:
+  skip: []                 # categories to skip, e.g. [network, cloud]
+
+reporting:
+  formats:
+    - html
+    - pdf
+  output_dir: ./reports
+  severity_threshold: info   # info | low | medium | high | critical
+
+authorization:
+  basis: "own_infra"        # own_infra | pentest_engagement | bug_bounty | ctf
+  authorized_by: ""
+  ref: ""
