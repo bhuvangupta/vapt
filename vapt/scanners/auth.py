@@ -625,12 +625,18 @@ class AuthScanner(BaseScanner):
         base = self.target.base_url
         reset_url: str | None = None
 
+        # Soft-404 baseline
+        baseline_body = await self.fetch_soft404_baseline()
+
         # Find password reset page
         for path in RESET_PATHS:
             url = f"{base}{path}"
             try:
                 resp = await self.http.get(url)
                 if resp.status_code == 200:
+                    # Filter soft-404 pages
+                    if self.is_soft_404(resp.text, baseline_body):
+                        continue
                     body_lower = resp.text.lower()
                     if any(kw in body_lower for kw in ["email", "reset", "forgot", "recover"]):
                         reset_url = url
