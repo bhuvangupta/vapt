@@ -67,6 +67,9 @@ class ApiScanner(BaseScanner):
             discovered: list[dict] = []
             semaphore = asyncio.Semaphore(10)
 
+            # Soft-404 baseline
+            baseline_body = await self.fetch_soft404_baseline()
+
             async def check_path(path: str) -> None:
                 url = f"{base}{path}"
                 async with semaphore:
@@ -75,6 +78,9 @@ class ApiScanner(BaseScanner):
                     except Exception:
                         return
                     if resp.status_code in (200, 301, 302):
+                        # Filter out soft-404 pages (SPAs returning 200 for everything)
+                        if resp.status_code == 200 and self.is_soft_404(resp.text, baseline_body):
+                            return
                         discovered.append({
                             "path": path,
                             "url": url,

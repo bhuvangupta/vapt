@@ -88,6 +88,48 @@ class BaseScanner(ABC):
 
         return headers
 
+    # ── Soft-404 detection ──────────────────────────────────────────────
+
+    SOFT_404_KEYWORDS = (
+        "404", "not found", "page not found", "does not exist",
+        "cannot be found", "could not find", "no longer available",
+        "page you requested", "page is not available",
+        "sorry but we could not find",
+    )
+
+    async def fetch_soft404_baseline(self) -> str:
+        """Fetch a known-nonexistent path and return its body.
+
+        If the server returns HTTP 200 for a garbage path (common with
+        SPAs), the body is the soft-404 baseline.  Returns an empty
+        string when the server returns a proper 404 status.
+        """
+        try:
+            resp = await self.http.get(
+                f"{self.target.base_url}/vapt-nonexistent-{id(self)}"
+            )
+            if resp.status_code == 200:
+                return resp.text
+        except Exception:
+            pass
+        return ""
+
+    def is_soft_404(self, body: str, baseline_body: str = "") -> bool:
+        """Return True if *body* looks like a soft-404 page.
+
+        Checks for common 404 keywords and, when a *baseline_body* is
+        provided, whether the two bodies are within 10% length of each
+        other (indicating the same SPA shell).
+        """
+        lower = body.lower()
+        if any(kw in lower for kw in self.SOFT_404_KEYWORDS):
+            return True
+        if baseline_body:
+            bl = len(baseline_body)
+            if bl > 0 and abs(len(body) - bl) / bl < 0.10:
+                return True
+        return False
+
     def log(self, msg: str):
         """Log a message (picked up by runner for display)."""
         # Will be replaced by proper logging in runner

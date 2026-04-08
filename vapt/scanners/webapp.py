@@ -106,12 +106,6 @@ class WebAppScanner(BaseScanner):
     # 1. Directory Discovery
     # ------------------------------------------------------------------
 
-    # Keywords indicating a soft-404 page (SPA or custom error)
-    _SOFT_404_KEYWORDS = [
-        "404", "not found", "page not found", "does not exist",
-        "cannot be found", "could not find",
-    ]
-
     async def _directory_discovery(self) -> None:
         paths = self._load_paths()
         if not paths:
@@ -121,20 +115,8 @@ class WebAppScanner(BaseScanner):
         base = self.target.base_url
         semaphore = asyncio.Semaphore(10)
 
-        # Fetch a soft-404 baseline: request a path that definitely doesn't exist.
-        # If the server returns 200 (common with SPAs), record its content-length
-        # so we can filter out identical responses for real paths.
-        baseline_length = -1
-        try:
-            bl_resp = await self.http.get(f"{base}/vapt-nonexistent-baseline-{id(self)}")
-            if bl_resp.status_code == 200:
-                baseline_length = len(bl_resp.text)
-                # Also check body for 404 keywords to confirm it's a soft-404
-                bl_lower = bl_resp.text.lower()
-                if not any(kw in bl_lower for kw in self._SOFT_404_KEYWORDS):
-                    baseline_length = -1  # Not a soft-404, don't filter
-        except Exception:
-            pass
+        # Fetch soft-404 baseline (uses base class method)
+        baseline_body = await self.fetch_soft404_baseline()
 
         async def check_path(path: str) -> None:
             url = f"{base}/{path.lstrip('/')}"
@@ -148,17 +130,11 @@ class WebAppScanner(BaseScanner):
                 if status not in (200, 301, 302, 403):
                     return
 
-                # For 200 responses on sensitive paths, do a GET to check for soft-404
-                if status == 200 and baseline_length > 0:
+                # For 200 responses, do a GET and check for soft-404
+                if status == 200 and baseline_body:
                     try:
                         full_resp = await self.http.get(url)
-                        body = full_resp.text
-                        body_lower = body.lower()
-                        # Check for soft-404 keywords
-                        if any(kw in body_lower for kw in self._SOFT_404_KEYWORDS):
-                            return
-                        # Check similarity to baseline (within 10% = same SPA shell)
-                        if abs(len(body) - baseline_length) / baseline_length < 0.10:
+                        if self.is_soft_404(full_resp.text, baseline_body):
                             return
                     except Exception:
                         pass
@@ -254,15 +230,22 @@ class WebAppScanner(BaseScanner):
         base = self.target.base_url
         semaphore = asyncio.Semaphore(10)
 
+        # Fetch soft-404 baseline (uses base class method)
+        baseline_body = await self.fetch_soft404_baseline()
+
         async def check_file(path: str, description: str) -> None:
             url = f"{base}/{path}"
             async with semaphore:
                 try:
-                    response = await self.http.head(url)
+                    response = await self.http.get(url)
                 except Exception:
                     return
 
                 if response.status_code != 200:
+                    return
+
+                # Filter soft-404 pages
+                if self.is_soft_404(response.text, baseline_body):
                     return
 
                 is_git = path.startswith(".git/")

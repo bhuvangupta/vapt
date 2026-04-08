@@ -81,48 +81,11 @@ class AuthzScanner(BaseScanner):
         except Exception:
             pass
 
-    # Keywords that indicate a soft-404 / error page (SPA or server-rendered)
-    _SOFT_404_KEYWORDS = [
-        "404", "not found", "page not found", "does not exist",
-        "cannot be found", "could not find", "no longer available",
-        "page you requested", "page is not available",
-        "sorry but we could not find",
-    ]
-
-    def _is_soft_404(self, body: str, baseline_body: str) -> bool:
-        """Detect soft-404 pages that return HTTP 200.
-
-        Checks for 404-like keywords in the body and compares against a
-        known-404 baseline to catch SPA shells that serve the same page
-        for all routes.
-        """
-        body_lower = body.lower()
-
-        # Direct keyword detection
-        if any(kw in body_lower for kw in self._SOFT_404_KEYWORDS):
-            return True
-
-        # Similarity check: if the response body is very similar to the
-        # known-404 baseline, it's likely the same SPA shell / error page.
-        if baseline_body:
-            # Simple length-based similarity — within 10% means same page
-            len_diff = abs(len(body) - len(baseline_body))
-            if len(baseline_body) > 0 and len_diff / len(baseline_body) < 0.10:
-                return True
-
-        return False
-
     async def _test_forced_browsing_inner(self) -> None:
         base = self.target.base_url
 
         # Fetch a known-404 baseline to detect soft-404s (SPAs returning 200)
-        baseline_body = ""
-        try:
-            baseline_resp = await self.http.get(f"{base}/vapt-nonexistent-path-{id(self)}")
-            if baseline_resp.status_code == 200:
-                baseline_body = baseline_resp.text
-        except Exception:
-            pass
+        baseline_body = await self.fetch_soft404_baseline()
 
         async def check_path(path: str, desc: str) -> None:
             url = f"{base}{path}"
@@ -133,7 +96,7 @@ class AuthzScanner(BaseScanner):
 
             if resp.status_code == 200:
                 # Filter out soft-404s (SPAs that return 200 for all routes)
-                if self._is_soft_404(resp.text, baseline_body):
+                if self.is_soft_404(resp.text, baseline_body):
                     return
 
                 # Must have substantive content beyond a generic shell
